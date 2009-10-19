@@ -31,11 +31,26 @@
 
 #define MAX_CONNECTIONS 10
 
+struct _event_group;
 
-typedef struct _connections {
-  struct event e;
-  struct event_base *b;
-} connections;
+typedef struct _event_data_wrap {
+  int fd;
+  short eflags;
+  void *params;
+  struct timeval *tv;
+  struct event event;
+  struct _event_group *group;
+  void (*callback)(int, short, void *arg);
+  struct sockaddr_storage peer_s;
+} event_data_wrap; 
+
+
+typedef struct _event_group {
+    struct event_base *b;
+    int max;
+    int cur;
+    event_data_wrap *events[];
+} event_group;
 
 
 typedef struct _run_data
@@ -43,18 +58,93 @@ typedef struct _run_data
     int stype;
     int s;
     socklen_t saddr_sz;
-    struct event_base *main_event;
-    int conn_count;
+    event_group *e_group;
     struct sockaddr_storage saddr_s;
-    struct sockaddr_storage peer_s;
 } run_data;
+
+
+int setup_event(event_data_wrap *e_wrap)
+{
+    /* TODO: add error checking in case something goes wrong... */
+    event_set(&e_wrap->event, e_wrap->fd, e_wrap->eflags, e_wrap->callback, 
+        e_wrap->params);
+    event_base_set(e_wrap->group->b, &e_wrap->event);
+    event_add(&e_wrap->event, e_wrap->tv);
+
+    return (0);
+}
+
+
+int add_to_group(event_data_wrap *e_wrap)
+{
+    if(e_wrap->group != NULL && e_wrap->group->cur < e_wrap->group->max) {
+        e_wrap->group->events[e_wrap->group->cur] = e_wrap;
+        ++e_wrap->group->cur;
+    }
+    else {
+        return (-1);
+    }
+
+    return (0);
+}
+
+
+int destroy_event(event_data_wrap *e_wrap)
+{
+    event_del(&e_wrap->event);
+    --e_wrap->group->cur;
+    free(e_wrap);
+
+    return (0);
+}
+
+
+int setup_event_group(event_group **grp, int max)
+{
+   size_t size;
+   
+   size = sizeof(event_group) + (max * sizeof(event_data_wrap *));
+   *grp = (event_group *) calloc(1, size);
+   if((*grp) != NULL) {
+       (*grp)->cur = 0;
+       (*grp)->max = max;
+
+       (*grp)->b = event_base_new();
+       if((*grp)->b == NULL) {
+          DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
+          return (-1);
+       }
+   }
+   else {
+       DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+       return (-1);
+   }
+
+   return (0);
+}
+
+
+int destroy_event_group(event_group **grp)
+{
+    int i, max;
+    
+    max = (*grp)->cur;
+    for(i = 0; i < max; ++i) {
+        destroy_event((*grp)->events[i]);
+    }
+
+    event_base_free((*grp)->b);
+    free(*grp);
+
+    return (0);
+}
 
 
 void recv_data(int fd, short event, void *arg)
 {
     int recv_sz = 0;
     char recv_buff[256];
-    connections *con = (connections *)arg;
+    event_data_wrap *e_wrap = (event_data_wrap *)arg;
     
     memset(recv_buff, '\0', sizeof(recv_buff));
     recv_sz = recv(fd, (void *)recv_buff, sizeof(recv_buff), 0); 
@@ -65,8 +155,7 @@ void recv_data(int fd, short event, void *arg)
     else {
         DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
         close(fd);
-        event_del(&con->e);
-        free(con);
+        destroy_event(e_wrap);
     }
 }
 
@@ -75,12 +164,12 @@ void cons_read(int fd, short event, void *arg)
 {
     int recv_sz = 0;
     char read_buff[256];
-    run_data *rd = (run_data *)arg;
+    struct event_base *b = (struct event_base *)arg;
     
     recv_sz = read(fd, (void *)read_buff, sizeof(read_buff));
     if(recv_sz > 0) {
         if(recv_sz == 1 && read_buff[0] == '\n') {
-            event_base_loopbreak(rd->main_event);
+            event_base_loopbreak(b);
         }
     }
 }
@@ -90,79 +179,94 @@ void accept_conn(int fd, short event, void *arg)
 {
     int new_conn;
     socklen_t sz;
-    connections *con = NULL;
+    event_data_wrap *recv_event = NULL;
     run_data *rd = (run_data *)arg;
+    struct sockaddr_storage peer;
     
     sz = rd->saddr_sz;
-    new_conn = accept(fd, (struct sockaddr *)&rd->peer_s, &sz);
-    if(new_conn > 0 && rd->conn_count < MAX_CONNECTIONS) {
-        con = (connections *) calloc(1, sizeof(connections));
-        if(con == NULL) {
+    memset(&peer, 0, sizeof(struct sockaddr_storage));
+    new_conn = accept(fd, (struct sockaddr *)&peer, &sz);
+    if(new_conn > 0) {
+        recv_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+        if(recv_event == NULL) {
             DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
         }
         else {
-            DPRINT(DPRINT_DEBUG, "[%s] accepting connection, socket [%d]", 
-                __FUNCTION__, new_conn);
-            con->b = rd->main_event; 
-            event_set(&con->e, new_conn, (EV_READ | EV_PERSIST), recv_data,
-                (void *)con);
-            event_base_set(rd->main_event, &con->e);
-            event_add(&con->e, NULL);
-            ++rd->conn_count;
-      }
+            recv_event->fd = new_conn;
+            recv_event->eflags = (EV_READ | EV_PERSIST);
+            recv_event->group = rd->e_group;
+            recv_event->callback = recv_data;
+            recv_event->tv = NULL;
+            recv_event->params = recv_event;
+            memcpy(&recv_event->peer_s, &peer, 
+                sizeof(struct sockaddr_storage));
+            setup_event(recv_event);
+
+            if(setup_event(recv_event) < 0 || add_to_group(recv_event) < 0) {
+                    DPRINT(DPRINT_ERROR, "[%s] unable to setup event", 
+                    __FUNCTION__);
+
+                close(new_conn);
+                free(recv_event);
+            }
+            else {
+                DPRINT(DPRINT_DEBUG, "[%s] connection accepted socket [%d]", 
+                    __FUNCTION__, new_conn);
+            }
+         }
     }
 }
 
 
 int loop_tcp(run_data *rd)
 {
-    struct event *a_event = NULL;
-    struct event *console_event = NULL;
+    event_data_wrap *accept_event = NULL;
+    event_data_wrap *console_event = NULL;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
 
-    a_event = (struct event *) calloc(1, sizeof(struct event));
-    if(a_event == NULL) {
+    accept_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(accept_event == NULL) {
         DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
         return (1);
     }
+  
+    accept_event->fd = rd->s;
+    accept_event->eflags = (EV_READ | EV_PERSIST);
+    accept_event->group = rd->e_group;
+    accept_event->callback = accept_conn;
+    accept_event->tv = NULL;
+    accept_event->params = rd;
 
-    console_event = (struct event *) calloc(1, sizeof(struct event));
+    if(setup_event(accept_event) < 0 || add_to_group(accept_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        return (1);
+    }
+
+    console_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(console_event == NULL) {
         DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
         return (1);
     }
 
-    rd->main_event = event_base_new();
-    if(rd->main_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
+    console_event->fd = STDIN_FILENO;
+    console_event->eflags = (EV_READ | EV_PERSIST);
+    console_event->group = rd->e_group;
+    console_event->callback = cons_read;
+    console_event->tv = NULL;
+    console_event->params = rd->e_group->b;
+
+    if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
         return (1);
     }
-
-    DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]", __FUNCTION__,
-        event_base_get_method(rd->main_event));
 
     if(listen(rd->s, 5) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] listen() failed", __FUNCTION__);
         return (1);
     }
 
-    event_set(a_event, rd->s, (EV_READ | EV_PERSIST), accept_conn, 
-        (void *)rd);
-    event_base_set(rd->main_event, a_event);
-    event_add(a_event, NULL);
-
-    event_set(console_event, STDIN_FILENO, (EV_READ | EV_PERSIST), cons_read, 
-        (void *)rd);
-    event_base_set(rd->main_event, console_event);
-    event_add(console_event, NULL);
-
-    event_base_dispatch(rd->main_event);
-    
-    event_del(a_event);
-    free(a_event);
-
-    event_base_free(rd->main_event);
+    event_base_dispatch(rd->e_group->b);
 
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
 
@@ -172,6 +276,7 @@ int loop_tcp(run_data *rd)
 
 int loop_udp(run_data *rd)
 {
+/*
     struct event *a_event = NULL;
     struct event *console_event = NULL;
 
@@ -216,6 +321,7 @@ int loop_udp(run_data *rd)
     event_base_free(rd->main_event);
 
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+*/
 
     return (0);
 }
@@ -237,6 +343,16 @@ int run(run_data *rd)
         return (1);
     }
 
+    if(setup_event_group(&rd->e_group, MAX_CONNECTIONS) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event groups", 
+            __FUNCTION__);
+        close(rd->s);
+        return (1);
+    }
+
+    DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]", __FUNCTION__,
+        event_base_get_method(rd->e_group->b));
+
     if(rd->stype == SOCK_STREAM) {
         loop_tcp(rd);
     }
@@ -244,7 +360,10 @@ int run(run_data *rd)
         loop_udp(rd);
     }
 
+    destroy_event_group(&rd->e_group);
+
     close(rd->s);
+
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
 
     return (0);
