@@ -57,7 +57,6 @@ typedef struct _run_data
 {
     int stype;
     int s;
-    socklen_t saddr_sz;
     event_group *e_group;
     struct sockaddr_storage saddr_s;
 } run_data;
@@ -140,7 +139,7 @@ int destroy_event_group(event_group **grp)
 }
 
 
-void recv_data(int fd, short event, void *arg)
+void recv_data_tcp(int fd, short event, void *arg)
 {
     int recv_sz = 0;
     char recv_buff[256];
@@ -156,6 +155,24 @@ void recv_data(int fd, short event, void *arg)
         DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
         close(fd);
         destroy_event(e_wrap);
+    }
+}
+
+
+void recv_data_udp(int fd, short event, void *arg)
+{
+    int recv_sz = 0;
+    socklen_t sz;
+    char recv_buff[256];
+    event_data_wrap *e_wrap = (event_data_wrap *)arg;
+    
+    memset(recv_buff, '\0', sizeof(recv_buff));
+    sz = sizeof(struct sockaddr);
+    recv_sz = recvfrom(fd, (void *)recv_buff, sizeof(recv_buff), 0,
+        (struct sockaddr *)&e_wrap->peer_s, &sz); 
+    if(recv_sz > 0) {
+        DPRINT(DPRINT_DEBUG, "[%s] received\n'''\n%s\n'''\n",
+            __FUNCTION__, recv_buff);
     }
 }
 
@@ -183,7 +200,7 @@ void accept_conn(int fd, short event, void *arg)
     run_data *rd = (run_data *)arg;
     struct sockaddr_storage peer;
     
-    sz = rd->saddr_sz;
+    sz = sizeof(struct sockaddr);
     memset(&peer, 0, sizeof(struct sockaddr_storage));
     new_conn = accept(fd, (struct sockaddr *)&peer, &sz);
     if(new_conn > 0) {
@@ -195,12 +212,11 @@ void accept_conn(int fd, short event, void *arg)
             recv_event->fd = new_conn;
             recv_event->eflags = (EV_READ | EV_PERSIST);
             recv_event->group = rd->e_group;
-            recv_event->callback = recv_data;
+            recv_event->callback = recv_data_tcp;
             recv_event->tv = NULL;
             recv_event->params = recv_event;
             memcpy(&recv_event->peer_s, &peer, 
                 sizeof(struct sockaddr_storage));
-            setup_event(recv_event);
 
             if(setup_event(recv_event) < 0 || add_to_group(recv_event) < 0) {
                     DPRINT(DPRINT_ERROR, "[%s] unable to setup event", 
@@ -276,52 +292,50 @@ int loop_tcp(run_data *rd)
 
 int loop_udp(run_data *rd)
 {
-/*
-    struct event *a_event = NULL;
-    struct event *console_event = NULL;
+    event_data_wrap *read_event = NULL;
+    event_data_wrap *console_event = NULL;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
 
-    a_event = (struct event *) calloc(1, sizeof(struct event));
-    if(a_event == NULL) {
+    read_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(read_event == NULL) {
         DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
         return (1);
     }
 
-    console_event = (struct event *) calloc(1, sizeof(struct event));
+    read_event->fd = rd->s;
+    read_event->eflags = (EV_READ | EV_PERSIST);
+    read_event->group = rd->e_group;
+    read_event->callback = recv_data_udp;
+    read_event->tv = NULL;
+    read_event->params = read_event;
+
+    if(setup_event(read_event) < 0 || add_to_group(read_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        return (1);
+    }
+
+    console_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(console_event == NULL) {
         DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
         return (1);
     }
 
-    rd->main_event = event_base_new();
-    if(rd->main_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
+    console_event->fd = STDIN_FILENO;
+    console_event->eflags = (EV_READ | EV_PERSIST);
+    console_event->group = rd->e_group;
+    console_event->callback = cons_read;
+    console_event->tv = NULL;
+    console_event->params = rd->e_group->b;
+
+    if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
         return (1);
     }
 
-    DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]", __FUNCTION__,
-        event_base_get_method(rd->main_event));
-
-    event_set(a_event, rd->s, (EV_READ | EV_PERSIST), recv_data, 
-        (void *)rd);
-    event_base_set(rd->main_event, a_event);
-    event_add(a_event, NULL);
-
-    event_set(console_event, STDIN_FILENO, (EV_READ | EV_PERSIST), cons_read, 
-        (void *)rd);
-    event_base_set(rd->main_event, console_event);
-    event_add(console_event, NULL);
-
-    event_base_dispatch(rd->main_event);
-    
-    event_del(a_event);
-    free(a_event);
-
-    event_base_free(rd->main_event);
+    event_base_dispatch(rd->e_group->b);
 
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
-*/
 
     return (0);
 }
@@ -337,10 +351,11 @@ int run(run_data *rd)
         return (1);
     }
   
-    if(bind(rd->s, (struct sockaddr *)&rd->saddr_s, rd->saddr_sz) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] bind() failed", __FUNCTION__);
-        close(rd->s);
-        return (1);
+    if(bind(rd->s, (struct sockaddr *)&rd->saddr_s, 
+        sizeof(struct sockaddr)) < 0) {
+            DPRINT(DPRINT_ERROR, "[%s] bind() failed", __FUNCTION__);
+            close(rd->s);
+            return (1);
     }
 
     if(setup_event_group(&rd->e_group, MAX_CONNECTIONS) < 0) {
@@ -388,9 +403,8 @@ int run4(char *ip, int port, int stype)
     }
 
     memset(&rd, 0, sizeof(run_data));
-    rd.saddr_sz = sz;
     rd.stype = stype;
-    memcpy(&rd.saddr_s, &si, rd.saddr_sz);
+    memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
@@ -417,9 +431,8 @@ int run6(char *ip, int port, int stype)
     }
   
     memset(&rd, 0, sizeof(run_data));
-    rd.saddr_sz = sz;
     rd.stype = stype;
-    memcpy(&rd.saddr_s, &si, rd.saddr_sz);
+    memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
