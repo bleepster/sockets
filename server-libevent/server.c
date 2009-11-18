@@ -33,6 +33,7 @@
 
 #define MAX_CONNECTIONS 100
 #define BUFFER_SIZE 256
+#define INTERVAL 1
 
 struct _event_group;
 
@@ -70,9 +71,20 @@ typedef struct _run_data
     int stype;
     int s;
     int buf_sz;
+    unsigned int interval;
     event_group *e_group;
     struct sockaddr_storage saddr_s;
 } run_data;
+
+
+typedef struct _params
+{
+  char *ip;
+  int port;
+  int stype;
+  int buf_sz;
+  unsigned int interval;
+} params;
 
 
 int update_stats(stats *stats_p, unsigned long val)
@@ -357,7 +369,7 @@ int loop_tcp(run_data *rd)
 
     output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
     output_event->tv->tv_usec = 0;
-    output_event->tv->tv_sec = 1;
+    output_event->tv->tv_sec = rd->interval;
 
     output_event->params = output_event;
 
@@ -437,7 +449,7 @@ int loop_udp(run_data *rd)
 
     output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
     output_event->tv->tv_usec = 0;
-    output_event->tv->tv_sec = 1;
+    output_event->tv->tv_sec = rd->interval;
 
     output_event->params = output_event;
 
@@ -498,7 +510,7 @@ int run(run_data *rd)
 }
 
 
-int run4(char *ip, int port, int stype, int buf_sz)
+int run4(params *p)
 {
     socklen_t sz;
     struct sockaddr_in si;
@@ -509,17 +521,18 @@ int run4(char *ip, int port, int stype, int buf_sz)
     memset(&si, 0, sizeof(struct sockaddr_in));
     sz = sizeof(struct sockaddr_in);
     si.sin_family = AF_INET;
-    si.sin_port = htons(port);
-    if(inet_pton(AF_INET, ip, (void *)&si.sin_addr) < 0) {
+    si.sin_port = htons(p->port);
+    if(inet_pton(AF_INET, p->ip, (void *)&si.sin_addr) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed", __FUNCTION__);
         return (1);
     }
 
     memset(&rd, 0, sizeof(run_data));
-    rd.stype = stype;
+    rd.stype = p->stype;
     memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
-    rd.buf_sz = buf_sz;
+    rd.buf_sz = p->buf_sz;
+    rd.interval = p->interval;
 
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
@@ -528,7 +541,7 @@ int run4(char *ip, int port, int stype, int buf_sz)
 }
 
 
-int run6(char *ip, int port, int stype, int buf_sz)
+int run6(params *p)
 {
     socklen_t sz;
     struct sockaddr_in6 si;
@@ -539,17 +552,18 @@ int run6(char *ip, int port, int stype, int buf_sz)
     memset(&si, 0, sizeof(struct sockaddr_in6));
     sz = sizeof(struct sockaddr_in6);
     si.sin6_family = AF_INET6;
-    si.sin6_port = htons(port);
-    if(inet_pton(AF_INET6, ip, (void *)&si.sin6_addr) < 0) {
+    si.sin6_port = htons(p->port);
+    if(inet_pton(AF_INET6, p->ip, (void *)&si.sin6_addr) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed", __FUNCTION__);
         return (1);
     }
   
     memset(&rd, 0, sizeof(run_data));
-    rd.stype = stype;
+    rd.stype = p->stype;
     memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
-    rd.buf_sz = buf_sz;
+    rd.buf_sz = p->buf_sz;
+    rd.interval = p->interval;
 
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
@@ -560,42 +574,45 @@ int run6(char *ip, int port, int stype, int buf_sz)
 
 int main(int argc, char *argv[])
 {
-    int port = 0;
     int ipver = 0;
-    int stype = 0;
     int len = 0;
-    char *ip = NULL;
-    int buf_sz = BUFFER_SIZE;
     int opt;
+
+    params p = {NULL, 0, 0, BUFFER_SIZE, INTERVAL};
+
   
-    while((opt = getopt(argc, argv, "4:6:p:t:B:")) != -1) {
+    while((opt = getopt(argc, argv, "4:6:p:t:B:i:")) != -1) {
         switch(opt) {
           case '4':
-              ip = argv[optind - 1];
+              p.ip = argv[optind - 1];
               ipver = 4;
               break;
 
           case '6':
-              ip = argv[optind - 1];
+              p.ip = argv[optind - 1];
               ipver = 6;
               break;
 
           case 'p':
-              port = (int) strtol(optarg, (char **)NULL, 10);
+              p.port = (int) strtol(optarg, (char **)NULL, 10);
               break;
 
           case 't':
               len = strlen(argv[optind - 1]);
 
               if(!strncmp(argv[optind - 1], "tcp", len))
-                  stype = SOCK_STREAM;
+                  p.stype = SOCK_STREAM;
               else if(!strncmp(argv[optind - 1], "udp", len))
-                  stype = SOCK_DGRAM;
+                  p.stype = SOCK_DGRAM;
 
               break;
 
           case 'B':
-              buf_sz = (int) strtol(optarg, (char **)NULL, 10);
+              p.buf_sz = (int) strtol(optarg, (char **)NULL, 10);
+              break;
+
+          case 'i':
+              p.interval = (int) strtol(optarg, (char **)NULL, 10);
               break;
 
           default:
@@ -603,23 +620,24 @@ int main(int argc, char *argv[])
         }
     }
 
-    if(ip == NULL || port == 0 || stype == 0) {
-        fprintf(stderr, "usage: [%s] %s %s %s %s",
+    if(p.ip == NULL || p.port == 0 || p.stype == 0) {
+        fprintf(stderr, "usage: [%s] %s %s %s %s %s\n",
             argv[0],
-            "[-4|-6] <ip address>",
-            "[-p] <port number>",
-            "[-t] <protocol (tcp|udp)>",
-            "[-B] <buffer size>\n");
+            "-4 <ip address> | -6 <ip address>",
+            "-p <port number>",
+            "-t <protocol (tcp|udp)>",
+            "[-i] <stats interval>",
+            "[-B] <buffer size>");
         return (1);
     }
 
     switch(ipver) {
       case 4:
-          run4(ip, port, stype, buf_sz);
+          run4(&p);
           break;
 
       case 6:
-          run6(ip, port, stype, buf_sz);
+          run6(&p);
           break;
 
       default:
