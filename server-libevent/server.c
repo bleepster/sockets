@@ -225,9 +225,19 @@ void output_stats(int fd, short event, void *arg)
     unsigned long c = 0;
 
     if(!pthread_mutex_lock(&stats_p->lock)) {
-        t = stats_p->total;
         c = stats_p->current;
         stats_p->current = 0;
+
+        /* assumption: if current is 0 no traffic is coming in */
+        /* in this case we reset the total counter             */
+        if(c == 0) {
+            t = 0;
+            stats_p->total = 0;
+        }
+        else {
+            t = stats_p->total;
+        }
+
         pthread_mutex_unlock(&stats_p->lock);
 
         DPRINT(DPRINT_DEBUG, "[%s] total [%ld] current[%ld]", 
