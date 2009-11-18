@@ -74,7 +74,7 @@ typedef struct _run_data
 } run_data;
 
 
-int inc_recv_counter(recv_counter *rc, unsigned long val)
+int update_stats(recv_counter *rc, unsigned long val)
 {
     int ret = 1;
 
@@ -191,7 +191,7 @@ void recv_data_tcp(int fd, short event, void *arg)
     memset(recv_buff, '\0', sizeof(recv_buff));
     recv_sz = recv(fd, (void *)recv_buff, e_wrap->buf_sz, 0); 
     if(recv_sz > 0) {
-        inc_recv_counter(&e_wrap->group->rc, recv_sz);
+        update_stats(&e_wrap->group->rc, recv_sz);
     }
     else {
         DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
@@ -235,7 +235,7 @@ void recv_data_udp(int fd, short event, void *arg)
     recv_sz = recvfrom(fd, (void *)recv_buff, e_wrap->buf_sz, 0,
         (struct sockaddr *)&e_wrap->peer_s, &sz); 
     if(recv_sz > 0) {
-        inc_recv_counter(&e_wrap->group->rc, recv_sz);
+        update_stats(&e_wrap->group->rc, recv_sz);
     }
 
     free(recv_buff);
