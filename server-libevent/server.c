@@ -49,17 +49,18 @@ typedef struct _event_data_wrap {
 } event_data_wrap; 
 
 
-typedef struct _recv_counter {
-  unsigned long counter;
+typedef struct _stats {
+  unsigned long total;
+  unsigned long current;
   pthread_mutex_t lock;
-} recv_counter;
+} stats;
 
 
 typedef struct _event_group {
     struct event_base *b;
     int max;
     int cur;
-    recv_counter rc;
+    stats stats;
     event_data_wrap *events[];
 } event_group;
 
@@ -74,13 +75,14 @@ typedef struct _run_data
 } run_data;
 
 
-int update_stats(recv_counter *rc, unsigned long val)
+int update_stats(stats *stats_p, unsigned long val)
 {
     int ret = 1;
 
-    if(!pthread_mutex_lock(&rc->lock)) {
-        rc->counter += val;
-        pthread_mutex_unlock(&rc->lock);
+    if(!pthread_mutex_lock(&stats_p->lock)) {
+        stats_p->total += val;
+        stats_p->current += val;
+        pthread_mutex_unlock(&stats_p->lock);
         ret = 0;
     }
 
@@ -139,15 +141,15 @@ int setup_event_group(event_group **grp, int max)
        (*grp)->cur = 0;
        (*grp)->max = max;
 
-       (*grp)->rc.counter = 0;
-       if(pthread_mutex_init(&(*grp)->rc.lock, NULL)) {
+       (*grp)->stats.total = 0;
+       if(pthread_mutex_init(&(*grp)->stats.lock, NULL)) {
           DPRINT(DPRINT_ERROR, "[%s] unable to initialize mutex", __FUNCTION__);
           return (-1);
        }
 
        (*grp)->b = event_base_new();
        if((*grp)->b == NULL) {
-          pthread_mutex_destroy(&(*grp)->rc.lock);
+          pthread_mutex_destroy(&(*grp)->stats.lock);
           DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
           return (-1);
        }
@@ -165,7 +167,7 @@ int destroy_event_group(event_group **grp)
 {
     int i, max;
 
-    pthread_mutex_destroy(&(*grp)->rc.lock);
+    pthread_mutex_destroy(&(*grp)->stats.lock);
     
     max = (*grp)->cur;
     for(i = 0; i < max; ++i) {
@@ -191,7 +193,7 @@ void recv_data_tcp(int fd, short event, void *arg)
     memset(recv_buff, '\0', sizeof(recv_buff));
     recv_sz = recv(fd, (void *)recv_buff, e_wrap->buf_sz, 0); 
     if(recv_sz > 0) {
-        update_stats(&e_wrap->group->rc, recv_sz);
+        update_stats(&e_wrap->group->stats, recv_sz);
     }
     else {
         DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
@@ -206,14 +208,18 @@ void recv_data_tcp(int fd, short event, void *arg)
 void output_stats(int fd, short event, void *arg)
 {
     event_data_wrap *e_wrap = (event_data_wrap *)arg;
-    recv_counter *rc = &e_wrap->group->rc; 
-    unsigned long val = 0;
+    stats *stats_p = &e_wrap->group->stats; 
+    unsigned long t = 0;
+    unsigned long c = 0;
 
-    if(!pthread_mutex_lock(&rc->lock)) {
-        val = rc->counter;
-        pthread_mutex_unlock(&rc->lock);
+    if(!pthread_mutex_lock(&stats_p->lock)) {
+        t = stats_p->total;
+        c = stats_p->current;
+        stats_p->current = 0;
+        pthread_mutex_unlock(&stats_p->lock);
 
-        DPRINT(DPRINT_DEBUG, "[%s] counter [%ld]", __FUNCTION__, val);
+        DPRINT(DPRINT_DEBUG, "[%s] total [%ld] current[%ld]", 
+           __FUNCTION__, t, c);
     }
 
     event_add(&e_wrap->event, e_wrap->tv);
@@ -235,7 +241,7 @@ void recv_data_udp(int fd, short event, void *arg)
     recv_sz = recvfrom(fd, (void *)recv_buff, e_wrap->buf_sz, 0,
         (struct sockaddr *)&e_wrap->peer_s, &sz); 
     if(recv_sz > 0) {
-        update_stats(&e_wrap->group->rc, recv_sz);
+        update_stats(&e_wrap->group->stats, recv_sz);
     }
 
     free(recv_buff);
