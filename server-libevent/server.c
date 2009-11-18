@@ -28,13 +28,17 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <pthread.h>
 
-#define MAX_CONNECTIONS 10
+
+#define MAX_CONNECTIONS 100
+#define BUFFER_SIZE 256
 
 struct _event_group;
 
 typedef struct _event_data_wrap {
   int fd;
+  int buf_sz;
   short eflags;
   void *params;
   struct timeval *tv;
@@ -45,10 +49,17 @@ typedef struct _event_data_wrap {
 } event_data_wrap; 
 
 
+typedef struct _recv_counter {
+  unsigned long counter;
+  pthread_mutex_t lock;
+} recv_counter;
+
+
 typedef struct _event_group {
     struct event_base *b;
     int max;
     int cur;
+    recv_counter rc;
     event_data_wrap *events[];
 } event_group;
 
@@ -57,9 +68,24 @@ typedef struct _run_data
 {
     int stype;
     int s;
+    int buf_sz;
     event_group *e_group;
     struct sockaddr_storage saddr_s;
 } run_data;
+
+
+int inc_recv_counter(recv_counter *rc, unsigned long val)
+{
+    int ret = 1;
+
+    if(!pthread_mutex_lock(&rc->lock)) {
+        rc->counter += val;
+        pthread_mutex_unlock(&rc->lock);
+        ret = 0;
+    }
+
+    return (ret);
+}
 
 
 int setup_event(event_data_wrap *e_wrap)
@@ -92,6 +118,11 @@ int destroy_event(event_data_wrap *e_wrap)
 {
     event_del(&e_wrap->event);
     --e_wrap->group->cur;
+
+    if(e_wrap->tv != NULL) {
+        free(e_wrap->tv);
+    }
+
     free(e_wrap);
 
     return (0);
@@ -108,8 +139,15 @@ int setup_event_group(event_group **grp, int max)
        (*grp)->cur = 0;
        (*grp)->max = max;
 
+       (*grp)->rc.counter = 0;
+       if(pthread_mutex_init(&(*grp)->rc.lock, NULL)) {
+          DPRINT(DPRINT_ERROR, "[%s] unable to initialize mutex", __FUNCTION__);
+          return (-1);
+       }
+
        (*grp)->b = event_base_new();
        if((*grp)->b == NULL) {
+          pthread_mutex_destroy(&(*grp)->rc.lock);
           DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
           return (-1);
        }
@@ -126,6 +164,8 @@ int setup_event_group(event_group **grp, int max)
 int destroy_event_group(event_group **grp)
 {
     int i, max;
+
+    pthread_mutex_destroy(&(*grp)->rc.lock);
     
     max = (*grp)->cur;
     for(i = 0; i < max; ++i) {
@@ -142,20 +182,41 @@ int destroy_event_group(event_group **grp)
 void recv_data_tcp(int fd, short event, void *arg)
 {
     int recv_sz = 0;
-    char recv_buff[256];
+    char *recv_buff = NULL;
     event_data_wrap *e_wrap = (event_data_wrap *)arg;
     
+    recv_buff = (char *) malloc(e_wrap->buf_sz);
+    /* if malloc fails, WE.ARE.SCREWED */
+
     memset(recv_buff, '\0', sizeof(recv_buff));
-    recv_sz = recv(fd, (void *)recv_buff, sizeof(recv_buff), 0); 
+    recv_sz = recv(fd, (void *)recv_buff, e_wrap->buf_sz, 0); 
     if(recv_sz > 0) {
-        DPRINT(DPRINT_DEBUG, "[%s] received\n'''\n%s\n'''\n",
-            __FUNCTION__, recv_buff);
+        inc_recv_counter(&e_wrap->group->rc, recv_sz);
     }
     else {
         DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
         close(fd);
         destroy_event(e_wrap);
     }
+ 
+    free(recv_buff);
+}
+
+
+void output_stats(int fd, short event, void *arg)
+{
+    event_data_wrap *e_wrap = (event_data_wrap *)arg;
+    recv_counter *rc = &e_wrap->group->rc; 
+    unsigned long val = 0;
+
+    if(!pthread_mutex_lock(&rc->lock)) {
+        val = rc->counter;
+        pthread_mutex_unlock(&rc->lock);
+
+        DPRINT(DPRINT_DEBUG, "[%s] counter [%ld]", __FUNCTION__, val);
+    }
+
+    event_add(&e_wrap->event, e_wrap->tv);
 }
 
 
@@ -163,17 +224,21 @@ void recv_data_udp(int fd, short event, void *arg)
 {
     int recv_sz = 0;
     socklen_t sz;
-    char recv_buff[256];
+    char *recv_buff = NULL;
     event_data_wrap *e_wrap = (event_data_wrap *)arg;
+
+    recv_buff = (char *) malloc(e_wrap->buf_sz);
+    /* if malloc fails, WE.ARE.SCREWED */
     
     memset(recv_buff, '\0', sizeof(recv_buff));
     sz = sizeof(struct sockaddr);
-    recv_sz = recvfrom(fd, (void *)recv_buff, sizeof(recv_buff), 0,
+    recv_sz = recvfrom(fd, (void *)recv_buff, e_wrap->buf_sz, 0,
         (struct sockaddr *)&e_wrap->peer_s, &sz); 
     if(recv_sz > 0) {
-        DPRINT(DPRINT_DEBUG, "[%s] received\n'''\n%s\n'''\n",
-            __FUNCTION__, recv_buff);
+        inc_recv_counter(&e_wrap->group->rc, recv_sz);
     }
+
+    free(recv_buff);
 }
 
 
@@ -215,6 +280,7 @@ void accept_conn(int fd, short event, void *arg)
             recv_event->callback = recv_data_tcp;
             recv_event->tv = NULL;
             recv_event->params = recv_event;
+            recv_event->buf_sz = rd->buf_sz;
             memcpy(&recv_event->peer_s, &peer, 
                 sizeof(struct sockaddr_storage));
 
@@ -236,6 +302,7 @@ void accept_conn(int fd, short event, void *arg)
 
 int loop_tcp(run_data *rd)
 {
+    event_data_wrap *output_event = NULL;
     event_data_wrap *accept_event = NULL;
     event_data_wrap *console_event = NULL;
 
@@ -277,6 +344,22 @@ int loop_tcp(run_data *rd)
         return (1);
     }
 
+    output_event->fd = -1;
+    output_event->eflags = 0;
+    output_event->group = rd->e_group;
+    output_event->callback = output_stats;
+
+    output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
+    output_event->tv->tv_usec = 0;
+    output_event->tv->tv_sec = 1;
+
+    output_event->params = output_event;
+
+    if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        return (1);
+    }
+
     if(listen(rd->s, 5) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] listen() failed", __FUNCTION__);
         return (1);
@@ -294,6 +377,7 @@ int loop_udp(run_data *rd)
 {
     event_data_wrap *read_event = NULL;
     event_data_wrap *console_event = NULL;
+    event_data_wrap *output_event = NULL;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
 
@@ -308,6 +392,7 @@ int loop_udp(run_data *rd)
     read_event->group = rd->e_group;
     read_event->callback = recv_data_udp;
     read_event->tv = NULL;
+    read_event->buf_sz = rd->buf_sz;
     read_event->params = read_event;
 
     if(setup_event(read_event) < 0 || add_to_group(read_event) < 0) {
@@ -329,6 +414,28 @@ int loop_udp(run_data *rd)
     console_event->params = rd->e_group->b;
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        return (1);
+    }
+
+    output_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(output_event == NULL) {
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        return (1);
+    }
+
+    output_event->fd = -1;
+    output_event->eflags = 0;
+    output_event->group = rd->e_group;
+    output_event->callback = output_stats;
+
+    output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
+    output_event->tv->tv_usec = 0;
+    output_event->tv->tv_sec = 1;
+
+    output_event->params = output_event;
+
+    if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
         return (1);
     }
@@ -385,7 +492,7 @@ int run(run_data *rd)
 }
 
 
-int run4(char *ip, int port, int stype)
+int run4(char *ip, int port, int stype, int buf_sz)
 {
     socklen_t sz;
     struct sockaddr_in si;
@@ -406,6 +513,8 @@ int run4(char *ip, int port, int stype)
     rd.stype = stype;
     memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
+    rd.buf_sz = buf_sz;
+
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
 
@@ -413,7 +522,7 @@ int run4(char *ip, int port, int stype)
 }
 
 
-int run6(char *ip, int port, int stype)
+int run6(char *ip, int port, int stype, int buf_sz)
 {
     socklen_t sz;
     struct sockaddr_in6 si;
@@ -434,6 +543,8 @@ int run6(char *ip, int port, int stype)
     rd.stype = stype;
     memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
 
+    rd.buf_sz = buf_sz;
+
     run(&rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
 
@@ -448,9 +559,10 @@ int main(int argc, char *argv[])
     int stype = 0;
     int len = 0;
     char *ip = NULL;
+    int buf_sz = BUFFER_SIZE;
     int opt;
   
-    while((opt = getopt(argc, argv, "4:6:p:t:")) != -1) {
+    while((opt = getopt(argc, argv, "4:6:p:t:B:")) != -1) {
         switch(opt) {
           case '4':
               ip = argv[optind - 1];
@@ -476,24 +588,32 @@ int main(int argc, char *argv[])
 
               break;
 
+          case 'B':
+              buf_sz = (int) strtol(optarg, (char **)NULL, 10);
+              break;
+
           default:
               break;
         }
     }
 
     if(ip == NULL || port == 0 || stype == 0) {
-        fprintf(stderr, 
-            "usage: ./server [-4|-6] ip [-p] port [-t] (tcp|udp)\n");
+        fprintf(stderr, "usage: [%s] %s %s %s %s",
+            argv[0],
+            "[-4|-6] <ip address>",
+            "[-p] <port number>",
+            "[-t] <protocol (tcp|udp)>",
+            "[-B] <buffer size>\n");
         return (1);
     }
 
     switch(ipver) {
       case 4:
-          run4(ip, port, stype);
+          run4(ip, port, stype, buf_sz);
           break;
 
       case 6:
-          run6(ip, port, stype);
+          run6(ip, port, stype, buf_sz);
           break;
 
       default:
