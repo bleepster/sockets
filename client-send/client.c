@@ -138,7 +138,7 @@ void print_usage(char *cmd)
         " | -6 server=<IPv6 address>,client=<IPv6 address>");
     DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
     DPRINT(DPRINT_ERROR,"optional parameters:\n");
-    DPRINT(DPRINT_ERROR,"\t[-b <size of data>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
     DPRINT(DPRINT_ERROR,"\t[-d <delay time>]\n");
     DPRINT(DPRINT_ERROR,"\t[-e <echo received data to client>]\n");
     DPRINT(DPRINT_ERROR,"\t[-t <duration (in seconds)>]\n");
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
     con_data *cd_p = NULL;
 
     /* TODO: add option to scpecify UDP or TCP */
-    while((opt = getopt(argc, argv, "4:6:p:b:d:t:i:h")) != -1)
+    while((opt = getopt(argc, argv, "4:6:p:S:d:t:i:h")) != -1)
     {
         switch(opt) {
             case '4':
@@ -246,7 +246,7 @@ int main(int argc, char **argv)
                 port = (int) strtol(optarg, (char **)NULL, 10);
                 break;
 
-            case 'b':
+            case 'S':
                 buf_len = (int) strtol(optarg, (char **)NULL, 10);
                 break; 
 

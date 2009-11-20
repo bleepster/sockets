@@ -582,6 +582,21 @@ int run6(params *p)
 }
 
 
+void print_usage(char *cmd)
+{
+    DPRINT(DPRINT_ERROR,"usage: %s [parameters]\n", cmd);
+    DPRINT(DPRINT_ERROR,"required parameters:\n");
+    DPRINT(DPRINT_ERROR,"\t[%s%s]\n", 
+        "-4 server=<IPv4 address>,client=<IPv4 address>",
+        " | -6 server=<IPv6 address>,client=<IPv6 address>");
+    DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-t <protocol (tcp|udp)>]\n");
+    DPRINT(DPRINT_ERROR,"optional parameters:\n");
+    DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-i <interval (seconds) for displaying stats>]\n");
+}
+
+
 int main(int argc, char *argv[])
 {
     int ipver = 0;
@@ -591,7 +606,7 @@ int main(int argc, char *argv[])
     params p = {NULL, 0, 0, BUFFER_SIZE, INTERVAL};
 
   
-    while((opt = getopt(argc, argv, "4:6:p:t:B:i:")) != -1) {
+    while((opt = getopt(argc, argv, "4:6:p:t:S:i:")) != -1) {
         switch(opt) {
           case '4':
               p.ip = argv[optind - 1];
@@ -617,7 +632,7 @@ int main(int argc, char *argv[])
 
               break;
 
-          case 'B':
+          case 'S':
               p.buf_sz = (int) strtol(optarg, (char **)NULL, 10);
               break;
 
@@ -625,19 +640,21 @@ int main(int argc, char *argv[])
               p.interval = (int) strtol(optarg, (char **)NULL, 10);
               break;
 
+          case 'h':
+              print_usage(argv[0]);
+              return (1);
+              break;
+
           default:
+              print_usage(argv[0]);
+              return (1);
               break;
         }
     }
 
     if(p.ip == NULL || p.port == 0 || p.stype == 0) {
-        fprintf(stderr, "usage: [%s] %s %s %s %s %s\n",
-            argv[0],
-            "-4 <ip address> | -6 <ip address>",
-            "-p <port number>",
-            "-t <protocol (tcp|udp)>",
-            "[-i] <stats interval>",
-            "[-B] <buffer size>");
+        DPRINT(DPRINT_ERROR,"ERROR: Parameters are not valid\n");
+        print_usage(argv[0]);
         return (1);
     }
 
