@@ -80,6 +80,20 @@ typedef struct _event_timeout
 } event_timeout;
 
 
+void sleep_random(void)
+{
+    struct timeval tv;
+    struct drand48_data buff;
+    long int res;
+    unsigned int t;
+
+    gettimeofday(&tv, NULL);
+    srand48_r(tv.tv_usec, &buff);
+    lrand48_r(&buff, &res);
+    t = ((res >> 8) & (1000000));
+    usleep(t);
+}
+
 int get_ip_subopt(char **server, char **client, char *arg)
 {
     int unknown = 0;
@@ -111,19 +125,27 @@ int is_quit(con_data *cd_p)
 {
     int ret;
 
-    pthread_mutex_lock(&cd_p->lock);
-    ret = cd_p->quit;
-    pthread_mutex_unlock(&cd_p->lock);    
+    ret = pthread_mutex_trylock(&cd_p->lock);
+    if(ret == 0) {
+        ret = cd_p->quit;
+        pthread_mutex_unlock(&cd_p->lock);    
+        return (ret);
+    }
 
-    return (ret);
+    return (0);
 }
 
 
 int set_quit(con_data *cd_p)
 {
-    pthread_mutex_lock(&cd_p->lock);
-    cd_p->quit =  1;
-    pthread_mutex_unlock(&cd_p->lock);    
+    int ret;
+
+    ret = pthread_mutex_trylock(&cd_p->lock);
+    if(ret == 0) {
+        cd_p->quit =  1;
+        pthread_mutex_unlock(&cd_p->lock);    
+        return (1);
+    }
     
     return (0);
 }
@@ -363,7 +385,9 @@ int main(int argc, char **argv)
     event_base_dispatch(ebase_halt);
 
     for(i = 0; i < instances; ++i) {
-        set_quit(&cd_p[i]);
+        while(!set_quit(&cd_p[i])) {
+            sleep_random();
+        }
     }
 
     free(cd_p);
