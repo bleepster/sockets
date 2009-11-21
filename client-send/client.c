@@ -1,5 +1,5 @@
 /* necessary for getsubopt() on linux                                    */
-/* man page for getsupobt(3) suggests using _XOPEN_SOURCE 500            */
+/* man page for getsubopt(3) suggests using _XOPEN_SOURCE 500            */
 /* but doing this breaks event.h code, googling throught mailing         */
 /* led me to:                                                            */
 /* http://www.linuxsa.org.au/pipermail/linuxsa/2005-February/077172.html */
@@ -58,7 +58,7 @@ char *const token[] = {
 };
 
 
-typedef struct _con_data
+typedef struct _connection
 {
   struct sockaddr_storage bindAddr;
   struct sockaddr_storage servAddr;
@@ -68,9 +68,10 @@ typedef struct _con_data
   int s;
   int ipver;
   pthread_t tid;
-  int quit;
+  int stop;
+  int established;
   pthread_mutex_t lock;
-} con_data;
+} connection;
 
 
 typedef struct _event_timeout
@@ -80,6 +81,7 @@ typedef struct _event_timeout
 } event_timeout;
 
 
+#ifdef __linux__
 void sleep_random(void)
 {
     struct timeval tv;
@@ -93,6 +95,19 @@ void sleep_random(void)
     t = ((res >> 8) & (1000000));
     usleep(t);
 }
+#endif
+
+
+#ifdef __FreeBSD__
+void sleep_random(void)
+{
+    struct timeval tv;
+  
+    gettimeofday(&tv, NULL);
+    usleep((arc4random() % (tv.tv_usec + 1)) / 100);
+}
+#endif
+
 
 int get_ip_subopt(char **server, char **client, char *arg)
 {
@@ -121,14 +136,14 @@ int get_ip_subopt(char **server, char **client, char *arg)
 }
 
 
-int is_quit(con_data *cd_p)
+int is_val_set(int base, int val, pthread_mutex_t *l)
 {
     int ret;
 
-    ret = pthread_mutex_trylock(&cd_p->lock);
+    ret = pthread_mutex_trylock(l);
     if(ret == 0) {
-        ret = cd_p->quit;
-        pthread_mutex_unlock(&cd_p->lock);    
+        ret = (base == val) ? 1 : 0;
+        pthread_mutex_unlock(l);    
         return (ret);
     }
 
@@ -136,14 +151,14 @@ int is_quit(con_data *cd_p)
 }
 
 
-int set_quit(con_data *cd_p)
+int set_val(int *base, int val, pthread_mutex_t *l)
 {
     int ret;
 
-    ret = pthread_mutex_trylock(&cd_p->lock);
+    ret = pthread_mutex_trylock(l);
     if(ret == 0) {
-        cd_p->quit =  1;
-        pthread_mutex_unlock(&cd_p->lock);    
+        *base = val;
+        pthread_mutex_unlock(l);    
         return (1);
     }
     
@@ -170,7 +185,9 @@ void print_usage(char *cmd)
 void *cb_run_client(void *arg)
 {
     char *buffer = NULL;
-    con_data *cd_p = (con_data *)arg;
+    connection *cd_p = (connection *)arg;
+
+    set_val(&cd_p->established, 1, &cd_p->lock);
 
     do {
         cd_p->s = socket(cd_p->ipver, SOCK_DGRAM, 0);
@@ -184,8 +201,8 @@ void *cb_run_client(void *arg)
         }
 
         buffer = (char *) malloc(cd_p->buf_len);
-        
-        while(!is_quit(cd_p)) {
+
+        while(!is_val_set(cd_p->stop, 1, &cd_p->lock)) {
             sendto(cd_p->s, buffer, cd_p->buf_len, 0, 
                 (struct sockaddr *)&cd_p->servAddr, cd_p->bindAddrSize);
             usleep(cd_p->delay);
@@ -196,6 +213,8 @@ void *cb_run_client(void *arg)
  
         pthread_mutex_destroy(&cd_p->lock);
     } while(0);
+
+    set_val(&cd_p->established, 0, &cd_p->lock);
 
     return (NULL);
 }
@@ -233,7 +252,7 @@ int main(int argc, char **argv)
     int buf_len = 0;
     int delay = DEF_DELAY;
     time_t tm_out = 0;
-    int instances = DEF_INSTANCES;
+    int icount = DEF_INSTANCES;
 
     struct sockaddr_in sin;
     struct sockaddr_in6 sin6;
@@ -241,8 +260,8 @@ int main(int argc, char **argv)
     struct event e_ki;
 
     event_timeout e_timeout;
-    con_data cd;
-    con_data *cd_p = NULL;
+    connection c;
+    connection *cons_p;
 
     /* TODO: add option to scpecify UDP or TCP */
     while((opt = getopt(argc, argv, "4:6:p:S:d:t:i:h")) != -1)
@@ -281,7 +300,7 @@ int main(int argc, char **argv)
                 break;
 
             case 'i':
-                instances = (int) strtol(optarg, (char **)NULL, 10);
+                icount = (int) strtol(optarg, (char **)NULL, 10);
                 break;
 
             case 'h':
@@ -302,12 +321,12 @@ int main(int argc, char **argv)
         return (1);
     } 
 
-    memset(&cd, 0, sizeof(con_data));
-    cd.buf_len = buf_len;
-    cd.delay = delay;
-    cd.ipver = ipver;
+    memset(&c, 0, sizeof(connection));
+    c.buf_len = buf_len;
+    c.delay = delay;
+    c.ipver = ipver;
 
-    if(cd.ipver == AF_INET) {
+    if(c.ipver == AF_INET) {
         memset(&sin, 0, sizeof(struct sockaddr_in));
 
         sin.sin_family = AF_INET;
@@ -318,7 +337,7 @@ int main(int argc, char **argv)
             return (1);
         }
         sin.sin_port = htons(port);
-        memcpy(&cd.servAddr, &sin, sizeof(struct sockaddr_storage));
+        memcpy(&c.servAddr, &sin, sizeof(struct sockaddr_storage));
 
         if(inet_pton(AF_INET, cip, (void *)&sin.sin_addr) < 0) {
             DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
@@ -327,11 +346,11 @@ int main(int argc, char **argv)
         }
 
         sin.sin_port = htons(0);
-        memcpy(&cd.bindAddr, &sin, sizeof(struct sockaddr_storage));
+        memcpy(&c.bindAddr, &sin, sizeof(struct sockaddr_storage));
 
-        cd.bindAddrSize = sizeof(struct sockaddr_in);
+        c.bindAddrSize = sizeof(struct sockaddr_in);
     }
-    else if (cd.ipver == AF_INET6) {
+    else if (c.ipver == AF_INET6) {
         memset(&sin6, 0, sizeof(struct sockaddr_in6));
 
         sin6.sin6_family = AF_INET6;
@@ -341,7 +360,7 @@ int main(int argc, char **argv)
             return (1);
         }
         sin6.sin6_port = htons(port);
-        memcpy(&cd.servAddr, &sin6, sizeof(struct sockaddr_storage));
+        memcpy(&c.servAddr, &sin6, sizeof(struct sockaddr_storage));
 
         if(inet_pton(AF_INET6, cip, (void *)&sin6.sin6_addr) < 0) {
             DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
@@ -349,9 +368,9 @@ int main(int argc, char **argv)
             return (1);
         }
         sin6.sin6_port = htons(0);
-        memcpy(&cd.bindAddr, &sin6, sizeof(struct sockaddr_storage));
+        memcpy(&c.bindAddr, &sin6, sizeof(struct sockaddr_storage));
 
-        cd.bindAddrSize = sizeof(struct sockaddr_in6);
+        c.bindAddrSize = sizeof(struct sockaddr_in6);
     }
 
     ebase_halt = event_base_new();
@@ -367,30 +386,42 @@ int main(int argc, char **argv)
     event_base_set(ebase_halt, &e_ki);
     event_add(&e_ki, NULL);
 
-    /* initialize keyboard timeout event handler */
+    /* initialize timeout event handler */
     e_timeout.tv.tv_usec = 0;
     e_timeout.tv.tv_sec = tm_out;
     event_set(&e_timeout.e, -1, 0, cb_timeout, ebase_halt);
     event_base_set(ebase_halt, &e_timeout.e);
     event_add(&e_timeout.e, NULL);
 
-    cd_p = (con_data *) calloc(instances, sizeof(con_data));
-    for(i = 0; i < instances; ++i) {
-        memcpy(&cd_p[i], &cd, sizeof(con_data));
-        pthread_mutex_init(&cd_p[i].lock, NULL);
-        pthread_create(&cd_p[i].tid, NULL, cb_run_client, &cd_p[i]);
+    cons_p = (connection *) calloc(icount, sizeof(connection));
+
+    for(i = 0; i < icount; ++i) {
+        memcpy(&cons_p[i], &c, sizeof(connection));
+        pthread_mutex_init(&cons_p[i].lock, NULL);
+        if(pthread_create(&cons_p[i].tid, NULL, cb_run_client, 
+               &cons_p[i]) != 0) {
+            pthread_mutex_destroy(&cons_p[i].lock);
+        }
     }
 
     /* this returns either on a timeout event or a keyboard event */
     event_base_dispatch(ebase_halt);
 
-    for(i = 0; i < instances; ++i) {
-        while(!set_quit(&cd_p[i])) {
+    /* clean up */
+    for(i = 0; i < icount; ++i) {
+        if(!is_val_set(cons_p[i].established, 1, &cons_p[i].lock)) {
+            continue;
+        }
+
+        /* tell thread to stop and do clean up */
+        set_val(&cons_p[i].stop, 1, &cons_p[i].lock);
+        while(!is_val_set(cons_p[i].established, 1, &cons_p[i].lock)) {
             sleep_random();
         }
+   
+        pthread_mutex_destroy(&cons_p[i].lock);
     }
 
-    free(cd_p);
-
+    free(cons_p);
     return (0);
 }
