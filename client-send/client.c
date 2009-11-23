@@ -70,6 +70,7 @@ typedef struct _connection
   pthread_t tid;
   int stop;
   int established;
+  int transport;
   pthread_mutex_t lock;
 } connection;
 
@@ -174,10 +175,11 @@ void print_usage(char *cmd)
         "-4 server=<IPv4 address>,client=<IPv4 address>",
         " | -6 server=<IPv6 address>,client=<IPv6 address>");
     DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-t <transport protocol (tcp|udp)>]\n");
     DPRINT(DPRINT_ERROR,"optional parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
     DPRINT(DPRINT_ERROR,"\t[-d <delay time>]\n");
-    DPRINT(DPRINT_ERROR,"\t[-t <duration (in seconds)>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-T <duration (in seconds)>]\n");
 }
 
 
@@ -189,7 +191,7 @@ void *cb_run_client(void *arg)
     set_val(&cd_p->established, 1, &cd_p->lock);
 
     do {
-        cd_p->s = socket(cd_p->ipver, SOCK_DGRAM, 0);
+        cd_p->s = socket(cd_p->ipver, cd_p->transport, 0);
         if(cd_p->s < 0) {
             break;
         }
@@ -252,6 +254,8 @@ int main(int argc, char **argv)
     int delay = DEF_DELAY;
     time_t tm_out = 0;
     int icount = DEF_INSTANCES;
+    int len;
+    int transport = 0;
 
     struct sockaddr_in sin;
     struct sockaddr_in6 sin6;
@@ -263,7 +267,7 @@ int main(int argc, char **argv)
     connection *cons_p;
 
     /* TODO: add option to scpecify UDP or TCP */
-    while((opt = getopt(argc, argv, "4:6:p:S:d:t:i:h")) != -1)
+    while((opt = getopt(argc, argv, "4:6:p:t:S:d:T:i:h")) != -1)
     {
         switch(opt) {
             case '4':
@@ -295,6 +299,15 @@ int main(int argc, char **argv)
                 break;
 
             case 't':
+                len = strlen(argv[optind - 1]);
+
+                if(!strncmp(argv[optind - 1], "tcp", len))
+                    transport = SOCK_STREAM;
+                else if(!strncmp(argv[optind - 1], "udp", len))
+                    transport = SOCK_DGRAM;
+                break;
+
+            case 'T':
                 tm_out = (time_t) strtol(optarg, (char **)NULL, 10);
                 break;
 
@@ -314,7 +327,8 @@ int main(int argc, char **argv)
         }
     }
 
-    if(cip == NULL || sip == NULL || port == 0 || buf_len == 0) {
+    if(cip == NULL || sip == NULL || port == 0 ||
+         buf_len == 0 || transport == 0) {
         DPRINT(DPRINT_ERROR,"parameters are not valid\n");
         print_usage(argv[0]);
         return (1);
@@ -324,6 +338,7 @@ int main(int argc, char **argv)
     c.buf_len = buf_len;
     c.delay = delay;
     c.ipver = ipver;
+    c.transport = transport;
 
     if(c.ipver == AF_INET) {
         memset(&sin, 0, sizeof(struct sockaddr_in));
