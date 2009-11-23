@@ -586,9 +586,8 @@ void print_usage(char *cmd)
 {
     DPRINT(DPRINT_ERROR,"usage: %s [parameters]\n", cmd);
     DPRINT(DPRINT_ERROR,"required parameters:\n");
-    DPRINT(DPRINT_ERROR,"\t[%s%s]\n", 
-        "-4 server=<IPv4 address>,client=<IPv4 address>",
-        " | -6 server=<IPv6 address>,client=<IPv6 address>");
+    DPRINT(DPRINT_ERROR,"\t[%s]\n", 
+        "-4 <IPv4 address> | -6 <IPv6 address>");
     DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
     DPRINT(DPRINT_ERROR,"\t[-t <protocol (tcp|udp)>]\n");
     DPRINT(DPRINT_ERROR,"optional parameters:\n");

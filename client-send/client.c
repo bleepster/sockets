@@ -177,7 +177,6 @@ void print_usage(char *cmd)
     DPRINT(DPRINT_ERROR,"optional parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
     DPRINT(DPRINT_ERROR,"\t[-d <delay time>]\n");
-    DPRINT(DPRINT_ERROR,"\t[-e <echo received data to client>]\n");
     DPRINT(DPRINT_ERROR,"\t[-t <duration (in seconds)>]\n");
 }
 
