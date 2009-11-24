@@ -405,7 +405,7 @@ int main(int argc, char **argv)
     e_timeout.tv.tv_sec = tm_out;
     event_set(&e_timeout.e, -1, 0, cb_timeout, ebase_halt);
     event_base_set(ebase_halt, &e_timeout.e);
-    event_add(&e_timeout.e, NULL);
+    event_add(&e_timeout.e, &e_timeout.tv);
 
     cons_p = (connection *) calloc(icount, sizeof(connection));
 
