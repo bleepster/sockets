@@ -9,7 +9,7 @@
 #elif defined DEBUG_CONSOLE
   #define DPRINT_DEBUG stdout
   #define DPRINT_ERROR stderr
-  #define DPRINT(file, text, args...) fprintf(file, text"\n", ##args)
+  #define DPRINT(file, text, args...) fprintf(file, text, ##args)
 #else
   #define DPRINT_DEBUG
   #define DPRINT_ERROR
