@@ -66,25 +66,24 @@ typedef struct _event_group {
 } event_group;
 
 
-typedef struct _run_data
-{
-    int stype;
-    int s;
-    int buf_sz;
-    unsigned int interval;
-    event_group *e_group;
-    struct sockaddr_storage saddr_s;
-} run_data;
-
-
 typedef struct _params
 {
   char *ip;
   int port;
   int stype;
   int buf_sz;
+  int max_cons;
   unsigned int interval;
 } params;
+
+
+typedef struct _run_data
+{
+    int s;
+    event_group *e_group;
+    params p;
+    struct sockaddr_storage saddr_s;
+} run_data;
 
 
 int update_stats(stats *stats_p, unsigned long val)
@@ -309,7 +308,7 @@ void accept_conn(int fd, short event, void *arg)
             recv_event->callback = recv_data_tcp;
             recv_event->tv = NULL;
             recv_event->params = recv_event;
-            recv_event->buf_sz = rd->buf_sz;
+            recv_event->buf_sz = rd->p.buf_sz;
             memcpy(&recv_event->peer_s, &peer, 
                 sizeof(struct sockaddr_storage));
 
@@ -380,7 +379,7 @@ int loop_tcp(run_data *rd)
 
     output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
     output_event->tv->tv_usec = 0;
-    output_event->tv->tv_sec = rd->interval;
+    output_event->tv->tv_sec = rd->p.interval;
 
     output_event->params = output_event;
 
@@ -421,7 +420,7 @@ int loop_udp(run_data *rd)
     read_event->group = rd->e_group;
     read_event->callback = recv_data_udp;
     read_event->tv = NULL;
-    read_event->buf_sz = rd->buf_sz;
+    read_event->buf_sz = rd->p.buf_sz;
     read_event->params = read_event;
 
     if(setup_event(read_event) < 0 || add_to_group(read_event) < 0) {
@@ -460,7 +459,7 @@ int loop_udp(run_data *rd)
 
     output_event->tv = (struct timeval *) calloc(1, sizeof(struct timeval));
     output_event->tv->tv_usec = 0;
-    output_event->tv->tv_sec = rd->interval;
+    output_event->tv->tv_sec = rd->p.interval;
 
     output_event->params = output_event;
 
@@ -481,7 +480,7 @@ int run(run_data *rd)
 {
     DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
-    rd->s = socket(rd->saddr_s.ss_family, rd->stype, 0);
+    rd->s = socket(rd->saddr_s.ss_family, rd->p.stype, 0);
     if(rd->s < 0) {
         DPRINT(DPRINT_ERROR, "[%s] socket() failed\n", __FUNCTION__);
         return (1);
@@ -494,7 +493,7 @@ int run(run_data *rd)
             return (1);
     }
 
-    if(setup_event_group(&rd->e_group, MAX_CONNECTIONS) < 0) {
+    if(setup_event_group(&rd->e_group, rd->p.max_cons) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event groups\n", 
             __FUNCTION__);
         close(rd->s);
@@ -504,10 +503,10 @@ int run(run_data *rd)
     DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]\n", __FUNCTION__,
         event_base_get_method(rd->e_group->b));
 
-    if(rd->stype == SOCK_STREAM) {
+    if(rd->p.stype == SOCK_STREAM) {
         loop_tcp(rd);
     }
-    else if(rd->stype == SOCK_DGRAM) {
+    else if(rd->p.stype == SOCK_DGRAM) {
         loop_udp(rd);
     }
 
@@ -521,62 +520,50 @@ int run(run_data *rd)
 }
 
 
-int run4(params *p)
+int run4(run_data *rd)
 {
     socklen_t sz;
     struct sockaddr_in si;
-    run_data rd;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     memset(&si, 0, sizeof(struct sockaddr_in));
     sz = sizeof(struct sockaddr_in);
     si.sin_family = AF_INET;
-    si.sin_port = htons(p->port);
-    if(inet_pton(AF_INET, p->ip, (void *)&si.sin_addr) < 0) {
+    si.sin_port = htons(rd->p.port);
+    if(inet_pton(AF_INET, rd->p.ip, (void *)&si.sin_addr) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed\n", __FUNCTION__);
         return (1);
     }
 
-    memset(&rd, 0, sizeof(run_data));
-    rd.stype = p->stype;
-    memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
+    memcpy(&rd->saddr_s, &si, sizeof(struct sockaddr_storage));
 
-    rd.buf_sz = p->buf_sz;
-    rd.interval = p->interval;
-
-    run(&rd);
+    run(rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }
 
 
-int run6(params *p)
+int run6(run_data *rd)
 {
     socklen_t sz;
     struct sockaddr_in6 si;
-    run_data rd;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     memset(&si, 0, sizeof(struct sockaddr_in6));
     sz = sizeof(struct sockaddr_in6);
     si.sin6_family = AF_INET6;
-    si.sin6_port = htons(p->port);
-    if(inet_pton(AF_INET6, p->ip, (void *)&si.sin6_addr) < 0) {
+    si.sin6_port = htons(rd->p.port);
+    if(inet_pton(AF_INET6, rd->p.ip, (void *)&si.sin6_addr) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed\n", __FUNCTION__);
         return (1);
     }
   
-    memset(&rd, 0, sizeof(run_data));
-    rd.stype = p->stype;
-    memcpy(&rd.saddr_s, &si, sizeof(struct sockaddr_storage));
+    memcpy(&rd->saddr_s, &si, sizeof(struct sockaddr_storage));
 
-    rd.buf_sz = p->buf_sz;
-    rd.interval = p->interval;
-
-    run(&rd);
+    run(rd);
     DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
@@ -585,15 +572,18 @@ int run6(params *p)
 
 void print_usage(char *cmd)
 {
-    DPRINT(DPRINT_ERROR,"usage: %s [parameters]\n", cmd);
-    DPRINT(DPRINT_ERROR,"required parameters:\n");
+    DPRINT(DPRINT_ERROR,"Usage: %s [parameters]\n", cmd);
+    DPRINT(DPRINT_ERROR,"Required parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[%s]\n", 
         "-4 <IPv4 address> | -6 <IPv6 address>");
     DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
     DPRINT(DPRINT_ERROR,"\t[-t <protocol (tcp|udp)>]\n");
-    DPRINT(DPRINT_ERROR,"optional parameters:\n");
+    DPRINT(DPRINT_ERROR,"Optional parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
     DPRINT(DPRINT_ERROR,"\t[-i <interval (seconds) for displaying stats>]\n");
+    DPRINT(DPRINT_ERROR,"Defaults:\n");
+    DPRINT(DPRINT_ERROR,"\tSize of receive data: 256 bytes\n");
+    DPRINT(DPRINT_ERROR,"\tDisplay status interval: 1 second\n");
 }
 
 
@@ -603,10 +593,10 @@ int main(int argc, char *argv[])
     int len = 0;
     int opt;
 
-    params p = {NULL, 0, 0, BUFFER_SIZE, INTERVAL};
+    params p = {NULL, 0, 0, BUFFER_SIZE, MAX_CONNECTIONS, INTERVAL};
+    run_data rd;
 
-  
-    while((opt = getopt(argc, argv, "4:6:p:t:S:i:")) != -1) {
+    while((opt = getopt(argc, argv, "4:6:p:t:S:i:m:")) != -1) {
         switch(opt) {
           case '4':
               p.ip = argv[optind - 1];
@@ -640,6 +630,10 @@ int main(int argc, char *argv[])
               p.interval = (int) strtol(optarg, (char **)NULL, 10);
               break;
 
+          case 'm':
+              p.max_cons = (int) strtol(optarg, (char **)NULL, 10);
+              break;
+
           case 'h':
               print_usage(argv[0]);
               return (1);
@@ -658,13 +652,16 @@ int main(int argc, char *argv[])
         return (1);
     }
 
+    memset(&rd, 0, sizeof(run_data));
+    memcpy(&rd.p, &p, sizeof(params));
+
     switch(ipver) {
       case 4:
-          run4(&p);
+          run4(&rd);
           break;
 
       case 6:
-          run6(&p);
+          run6(&rd);
           break;
 
       default:
