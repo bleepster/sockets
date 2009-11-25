@@ -155,19 +155,20 @@ int setup_event_group(event_group **grp, int max)
 
        (*grp)->stats.total = 0;
        if(pthread_mutex_init(&(*grp)->stats.lock, NULL)) {
-          DPRINT(DPRINT_ERROR, "[%s] unable to initialize mutex", __FUNCTION__);
+          DPRINT(DPRINT_ERROR, "[%s] unable to initialize mutex\n",
+              __FUNCTION__);
           return (-1);
        }
 
        (*grp)->b = event_base_new();
        if((*grp)->b == NULL) {
           pthread_mutex_destroy(&(*grp)->stats.lock);
-          DPRINT(DPRINT_ERROR, "[%s] libevent error", __FUNCTION__);
+          DPRINT(DPRINT_ERROR, "[%s] libevent error\n", __FUNCTION__);
           return (-1);
        }
    }
    else {
-       DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+       DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
        return (-1);
    }
 
@@ -208,7 +209,7 @@ void recv_data_tcp(int fd, short event, void *arg)
         update_stats(&e_wrap->group->stats, recv_sz);
     }
     else {
-        DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]", __FUNCTION__, fd);
+        DPRINT(DPRINT_DEBUG, "[%s] closing socket [%d]\n", __FUNCTION__, fd);
         close(fd);
         destroy_event(e_wrap);
     }
@@ -240,7 +241,7 @@ void output_stats(int fd, short event, void *arg)
 
         pthread_mutex_unlock(&stats_p->lock);
 
-        DPRINT(DPRINT_DEBUG, "[%s] total [%ld] current[%ld]", 
+        DPRINT(DPRINT_DEBUG, "[%s] total [%ld] current[%ld]\n", 
            __FUNCTION__, t, c);
     }
 
@@ -299,7 +300,7 @@ void accept_conn(int fd, short event, void *arg)
     if(new_conn > 0) {
         recv_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
         if(recv_event == NULL) {
-            DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+            DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         }
         else {
             recv_event->fd = new_conn;
@@ -313,14 +314,14 @@ void accept_conn(int fd, short event, void *arg)
                 sizeof(struct sockaddr_storage));
 
             if(setup_event(recv_event) < 0 || add_to_group(recv_event) < 0) {
-                    DPRINT(DPRINT_ERROR, "[%s] unable to setup event", 
+                    DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", 
                     __FUNCTION__);
 
                 close(new_conn);
                 free(recv_event);
             }
             else {
-                DPRINT(DPRINT_DEBUG, "[%s] connection accepted socket [%d]", 
+                DPRINT(DPRINT_DEBUG, "[%s] connection accepted socket [%d]\n", 
                     __FUNCTION__, new_conn);
             }
          }
@@ -334,11 +335,11 @@ int loop_tcp(run_data *rd)
     event_data_wrap *accept_event = NULL;
     event_data_wrap *console_event = NULL;
 
-    DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     accept_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(accept_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
   
@@ -350,13 +351,13 @@ int loop_tcp(run_data *rd)
     accept_event->params = rd;
 
     if(setup_event(accept_event) < 0 || add_to_group(accept_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
     console_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(console_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
 
@@ -368,7 +369,7 @@ int loop_tcp(run_data *rd)
     console_event->params = rd->e_group->b;
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
@@ -384,18 +385,18 @@ int loop_tcp(run_data *rd)
     output_event->params = output_event;
 
     if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
     if(listen(rd->s, 5) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] listen() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] listen() failed\n", __FUNCTION__);
         return (1);
     }
 
     event_base_dispatch(rd->e_group->b);
 
-    DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }
@@ -407,11 +408,11 @@ int loop_udp(run_data *rd)
     event_data_wrap *console_event = NULL;
     event_data_wrap *output_event = NULL;
 
-    DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     read_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(read_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
 
@@ -424,13 +425,13 @@ int loop_udp(run_data *rd)
     read_event->params = read_event;
 
     if(setup_event(read_event) < 0 || add_to_group(read_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
     console_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(console_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
 
@@ -442,13 +443,13 @@ int loop_udp(run_data *rd)
     console_event->params = rd->e_group->b;
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
     output_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
     if(output_event == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] malloc() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
 
@@ -464,13 +465,13 @@ int loop_udp(run_data *rd)
     output_event->params = output_event;
 
     if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
 
     event_base_dispatch(rd->e_group->b);
 
-    DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }
@@ -478,29 +479,29 @@ int loop_udp(run_data *rd)
 
 int run(run_data *rd)
 {
-    DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     rd->s = socket(rd->saddr_s.ss_family, rd->stype, 0);
     if(rd->s < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] socket() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] socket() failed\n", __FUNCTION__);
         return (1);
     }
   
     if(bind(rd->s, (struct sockaddr *)&rd->saddr_s, 
         sizeof(struct sockaddr)) < 0) {
-            DPRINT(DPRINT_ERROR, "[%s] bind() failed", __FUNCTION__);
+            DPRINT(DPRINT_ERROR, "[%s] bind() failed\n", __FUNCTION__);
             close(rd->s);
             return (1);
     }
 
     if(setup_event_group(&rd->e_group, MAX_CONNECTIONS) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to setup event groups", 
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event groups\n", 
             __FUNCTION__);
         close(rd->s);
         return (1);
     }
 
-    DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]", __FUNCTION__,
+    DPRINT(DPRINT_DEBUG, "[%s] libevent using [%s]\n", __FUNCTION__,
         event_base_get_method(rd->e_group->b));
 
     if(rd->stype == SOCK_STREAM) {
@@ -514,7 +515,7 @@ int run(run_data *rd)
 
     close(rd->s);
 
-    DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }
@@ -526,14 +527,14 @@ int run4(params *p)
     struct sockaddr_in si;
     run_data rd;
 
-    DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     memset(&si, 0, sizeof(struct sockaddr_in));
     sz = sizeof(struct sockaddr_in);
     si.sin_family = AF_INET;
     si.sin_port = htons(p->port);
     if(inet_pton(AF_INET, p->ip, (void *)&si.sin_addr) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed\n", __FUNCTION__);
         return (1);
     }
 
@@ -545,7 +546,7 @@ int run4(params *p)
     rd.interval = p->interval;
 
     run(&rd);
-    DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }
@@ -557,14 +558,14 @@ int run6(params *p)
     struct sockaddr_in6 si;
     run_data rd;
 
-    DPRINT(DPRINT_DEBUG, "[%s] starting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
     memset(&si, 0, sizeof(struct sockaddr_in6));
     sz = sizeof(struct sockaddr_in6);
     si.sin6_family = AF_INET6;
     si.sin6_port = htons(p->port);
     if(inet_pton(AF_INET6, p->ip, (void *)&si.sin6_addr) < 0) {
-        DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed", __FUNCTION__);
+        DPRINT(DPRINT_ERROR, "[%s] inet_pton() failed\n", __FUNCTION__);
         return (1);
     }
   
@@ -576,7 +577,7 @@ int run6(params *p)
     rd.interval = p->interval;
 
     run(&rd);
-    DPRINT(DPRINT_DEBUG, "[%s] exiting...", __FUNCTION__);
+    DPRINT(DPRINT_DEBUG, "[%s] exiting...\n", __FUNCTION__);
 
     return (0);
 }

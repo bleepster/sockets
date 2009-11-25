@@ -346,7 +346,7 @@ int main(int argc, char **argv)
         sin.sin_family = AF_INET;
         if(inet_pton(AF_INET, sip, (void *)&sin.sin_addr) < 0) 
         {
-            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
+            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address\n", 
                 __FUNCTION__, sip);
             return (1);
         }
@@ -354,7 +354,7 @@ int main(int argc, char **argv)
         memcpy(&c.servAddr, &sin, sizeof(struct sockaddr_storage));
 
         if(inet_pton(AF_INET, cip, (void *)&sin.sin_addr) < 0) {
-            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
+            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address\n", 
                 __FUNCTION__, cip);
             return (1);
         }
@@ -369,7 +369,7 @@ int main(int argc, char **argv)
 
         sin6.sin6_family = AF_INET6;
         if(inet_pton(AF_INET6, sip, (void *)&sin6.sin6_addr) < 0) {
-            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
+            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address\n", 
                 __FUNCTION__, sip);
             return (1);
         }
@@ -377,7 +377,7 @@ int main(int argc, char **argv)
         memcpy(&c.servAddr, &sin6, sizeof(struct sockaddr_storage));
 
         if(inet_pton(AF_INET6, cip, (void *)&sin6.sin6_addr) < 0) {
-            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address", 
+            DPRINT(DPRINT_ERROR, "[%s] failed to convert [%s] address\n", 
                 __FUNCTION__, cip);
             return (1);
         }
@@ -389,7 +389,7 @@ int main(int argc, char **argv)
 
     ebase_halt = event_base_new();
     if(ebase_halt == NULL) {
-        DPRINT(DPRINT_ERROR, "[%s] unable to initialize event base", 
+        DPRINT(DPRINT_ERROR, "[%s] unable to initialize event base\n", 
             __FUNCTION__);
         return (1);
     }
