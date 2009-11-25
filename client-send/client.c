@@ -169,17 +169,21 @@ int set_val(int *base, int val, pthread_mutex_t *l)
 
 void print_usage(char *cmd)
 {
-    DPRINT(DPRINT_ERROR,"usage: %s [parameters]\n", cmd);
-    DPRINT(DPRINT_ERROR,"required parameters:\n");
+    DPRINT(DPRINT_ERROR,"Usage: %s [parameters]\n", cmd);
+    DPRINT(DPRINT_ERROR,"Required parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[%s%s]\n", 
         "-4 server=<IPv4 address>,client=<IPv4 address>",
         " | -6 server=<IPv6 address>,client=<IPv6 address>");
     DPRINT(DPRINT_ERROR,"\t[-p <port number>]\n");
     DPRINT(DPRINT_ERROR,"\t[-t <transport protocol (tcp|udp)>]\n");
-    DPRINT(DPRINT_ERROR,"optional parameters:\n");
+    DPRINT(DPRINT_ERROR,"Optional parameters:\n");
     DPRINT(DPRINT_ERROR,"\t[-S <size of data>]\n");
+    DPRINT(DPRINT_ERROR,"\t[-i <number of thread instances>]\n");
     DPRINT(DPRINT_ERROR,"\t[-d <delay time>]\n");
     DPRINT(DPRINT_ERROR,"\t[-T <duration (in seconds)>]\n");
+    DPRINT(DPRINT_ERROR,"Defaults:\n");
+    DPRINT(DPRINT_ERROR,"\tDelay: 1000000 usec\n");
+    DPRINT(DPRINT_ERROR,"\tNumber of instances: 1\n");
 }
 
 
