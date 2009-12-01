@@ -452,16 +452,17 @@ int main(int argc, char **argv)
             pthread_mutex_destroy(&cons_p[i].lock);
             continue;
         }
+        else {
+            DPRINT(DPRINT_DEBUG, "[%s] cleaning up [%d]\n", __FUNCTION__, i);
 
-        DPRINT(DPRINT_DEBUG, "[%s] cleaning up [%d]\n", __FUNCTION__, i);
-
-        /* tell thread to stop and do clean up */
-        set_val(&cons_p[i].stop, 1, &cons_p[i].lock);
-        while(!is_val_set(cons_p[i].established, 1, &cons_p[i].lock)) {
-            sleep_random();
-        }
+            /* tell thread to stop and do clean up */
+            set_val(&cons_p[i].stop, 1, &cons_p[i].lock);
+            while(!is_val_set(cons_p[i].established, 1, &cons_p[i].lock)) {
+                sleep_random();
+            }
    
-        pthread_mutex_destroy(&cons_p[i].lock);
+            pthread_mutex_destroy(&cons_p[i].lock);
+        }
     }
 
     free(cons_p);
