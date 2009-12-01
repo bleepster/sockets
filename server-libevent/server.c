@@ -658,6 +658,11 @@ int main(int argc, char *argv[])
         return (1);
     }
 
+    /* always add three for the default three events that we expect other */
+    /* than socket receive events: listen socket events, console events,  */
+    /* stats timer output events                                          */
+    p.max_cons += 3;
+
     memset(&rd, 0, sizeof(run_data));
     memcpy(&rd.p, &p, sizeof(params));
 
