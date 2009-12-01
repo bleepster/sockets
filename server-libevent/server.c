@@ -341,7 +341,7 @@ int loop_tcp(run_data *rd)
         DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
-  
+
     accept_event->fd = rd->s;
     accept_event->eflags = (EV_READ | EV_PERSIST);
     accept_event->group = rd->e_group;
@@ -369,6 +369,12 @@ int loop_tcp(run_data *rd)
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        return (1);
+    }
+
+    output_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(output_event == NULL) {
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
         return (1);
     }
 
