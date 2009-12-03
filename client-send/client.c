@@ -436,15 +436,18 @@ int main(int argc, char **argv)
     for(i = 0; i < icount; ++i) {
         memcpy(&cons_p[i], &c, sizeof(connection));
         pthread_mutex_init(&cons_p[i].lock, NULL);
-        DPRINT(DPRINT_DEBUG, "[%s] running [%d]\n", __FUNCTION__, i);
         if(pthread_create(&cons_p[i].tid, NULL, cb_run_client, 
                &cons_p[i]) != 0) {
             DPRINT(DPRINT_ERROR, "[%s] [%d] failed to run\n", __FUNCTION__, i);
         }
     }
 
+    DPRINT(DPRINT_DEBUG, "[%s] running...\n", __FUNCTION__);
+
     /* this returns either on a timeout event or a keyboard event */
     event_base_dispatch(ebase_halt);
+
+    DPRINT(DPRINT_DEBUG, "[%s] cleaning up...\n", __FUNCTION__);
 
     /* clean up */
     for(i = 0; i < icount; ++i) {
@@ -453,8 +456,6 @@ int main(int argc, char **argv)
             continue;
         }
         else {
-            DPRINT(DPRINT_DEBUG, "[%s] cleaning up [%d]\n", __FUNCTION__, i);
-
             /* tell thread to stop and do clean up */
             set_val(&cons_p[i].stop, 1, &cons_p[i].lock);
             while(!is_val_set(cons_p[i].established, 1, &cons_p[i].lock)) {
