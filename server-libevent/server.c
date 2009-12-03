@@ -338,6 +338,12 @@ void accept_conn(int fd, short event, void *arg)
 
 int loop_tcp(run_data *rd)
 {
+    /* note: all event_data_wrap allocated inside this function will be      */
+    /*       free()'d by run() during destroy_event_group(). in a event      */
+    /*       in an event where a call to setup_event() or add_to_group()     */
+    /*       fails, free() is called immediately since destroy_event_group() */
+    /*       won't be able to free() them                                    */
+
     event_data_wrap *output_event = NULL;
     event_data_wrap *accept_event = NULL;
     event_data_wrap *console_event = NULL;
@@ -360,6 +366,7 @@ int loop_tcp(run_data *rd)
 
     if(setup_event(accept_event) < 0 || add_to_group(accept_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(accept_event);
         return (1);
     }
 
@@ -378,6 +385,7 @@ int loop_tcp(run_data *rd)
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(console_event);
         return (1);
     }
 
@@ -400,6 +408,7 @@ int loop_tcp(run_data *rd)
 
     if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(output_event);
         return (1);
     }
 
@@ -419,6 +428,7 @@ int loop_tcp(run_data *rd)
 
     if(setup_event(signal_event) < 0 || add_to_group(signal_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(signal_event);
         return (1);
     }
 
@@ -437,6 +447,12 @@ int loop_tcp(run_data *rd)
 
 int loop_udp(run_data *rd)
 {
+    /* note: all event_data_wrap allocated inside this function will be      */
+    /*       free()'d by run() during destroy_event_group(). in a event      */
+    /*       in an event where a call to setup_event() or add_to_group()     */
+    /*       fails, free() is called immediately since destroy_event_group() */
+    /*       won't be able to free() them                                    */
+
     event_data_wrap *read_event = NULL;
     event_data_wrap *console_event = NULL;
     event_data_wrap *output_event = NULL;
@@ -460,6 +476,7 @@ int loop_udp(run_data *rd)
 
     if(setup_event(read_event) < 0 || add_to_group(read_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(read_event);
         return (1);
     }
 
@@ -478,6 +495,7 @@ int loop_udp(run_data *rd)
 
     if(setup_event(console_event) < 0 || add_to_group(console_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(console_event);
         return (1);
     }
 
@@ -500,6 +518,7 @@ int loop_udp(run_data *rd)
 
     if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(output_event);
         return (1);
     }
 
@@ -519,6 +538,7 @@ int loop_udp(run_data *rd)
 
     if(setup_event(signal_event) < 0 || add_to_group(signal_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        free(signal_event);
         return (1);
     }
 
