@@ -715,16 +715,16 @@ int main(int argc, char *argv[])
     memcpy(&rd.p, &p, sizeof(params));
 
     switch(ipver) {
-      case 4:
-          run4(&rd);
-          break;
+        case 4:
+            run4(&rd);
+            break;
 
-      case 6:
-          run6(&rd);
-          break;
+        case 6:
+            run6(&rd);
+            break;
 
-      default:
-          break;
+        default:
+            break;
     }
 
     return (0);
