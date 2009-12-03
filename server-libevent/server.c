@@ -19,6 +19,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <sys/time.h>
 #include <event.h>
@@ -285,6 +286,13 @@ void cons_read(int fd, short event, void *arg)
 }
 
 
+void handle_signal(int fd, short event, void *arg)
+{
+    struct event_base *b = (struct event_base *)arg;
+    event_base_loopbreak(b);
+}
+
+
 void accept_conn(int fd, short event, void *arg)
 {
     int new_conn;
@@ -333,6 +341,7 @@ int loop_tcp(run_data *rd)
     event_data_wrap *output_event = NULL;
     event_data_wrap *accept_event = NULL;
     event_data_wrap *console_event = NULL;
+    event_data_wrap *signal_event = NULL;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
@@ -394,6 +403,25 @@ int loop_tcp(run_data *rd)
         return (1);
     }
 
+    signal_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(signal_event == NULL) {
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
+        return (1);
+    }
+
+    signal_event->fd = SIGTERM;
+    signal_event->eflags = (EV_SIGNAL | EV_PERSIST);
+    signal_event->group = rd->e_group;
+    signal_event->callback = handle_signal;
+
+    signal_event->tv = NULL;
+    signal_event->params = rd->e_group->b;
+
+    if(setup_event(signal_event) < 0 || add_to_group(signal_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        return (1);
+    }
+
     if(listen(rd->s, 5) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] listen() failed\n", __FUNCTION__);
         return (1);
@@ -412,6 +440,7 @@ int loop_udp(run_data *rd)
     event_data_wrap *read_event = NULL;
     event_data_wrap *console_event = NULL;
     event_data_wrap *output_event = NULL;
+    event_data_wrap *signal_event = NULL;
 
     DPRINT(DPRINT_DEBUG, "[%s] starting...\n", __FUNCTION__);
 
@@ -470,6 +499,25 @@ int loop_udp(run_data *rd)
     output_event->params = output_event;
 
     if(setup_event(output_event) < 0 || add_to_group(output_event) < 0) {
+        DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
+        return (1);
+    }
+
+    signal_event = (event_data_wrap *) calloc(1, sizeof(event_data_wrap));
+    if(signal_event == NULL) {
+        DPRINT(DPRINT_ERROR, "[%s] malloc() failed\n", __FUNCTION__);
+        return (1);
+    }
+
+    signal_event->fd = SIGTERM;
+    signal_event->eflags = (EV_SIGNAL | EV_PERSIST);
+    signal_event->group = rd->e_group;
+    signal_event->callback = handle_signal;
+
+    signal_event->tv = NULL;
+    signal_event->params = rd->e_group->b;
+
+    if(setup_event(signal_event) < 0 || add_to_group(signal_event) < 0) {
         DPRINT(DPRINT_ERROR, "[%s] unable to setup event\n", __FUNCTION__);
         return (1);
     }
