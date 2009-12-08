@@ -339,10 +339,10 @@ void accept_conn(int fd, short event, void *arg)
 int loop_tcp(run_data *rd)
 {
     /* note: all event_data_wrap allocated inside this function will be      */
-    /*       free()'d by run() during destroy_event_group(). in a event      */
-    /*       in an event where a call to setup_event() or add_to_group()     */
-    /*       fails, free() is called immediately since destroy_event_group() */
-    /*       won't be able to free() them                                    */
+    /*       free()'d by run() during destroy_event_group(). in an event     */
+    /*       where a call to setup_event() or add_to_group() fails, free()   */
+    /*       is called immediately since destroy_event_group() are not aware */
+    /*       of them and won't be able to free() them                        */
 
     event_data_wrap *output_event = NULL;
     event_data_wrap *accept_event = NULL;
@@ -448,10 +448,10 @@ int loop_tcp(run_data *rd)
 int loop_udp(run_data *rd)
 {
     /* note: all event_data_wrap allocated inside this function will be      */
-    /*       free()'d by run() during destroy_event_group(). in a event      */
-    /*       in an event where a call to setup_event() or add_to_group()     */
-    /*       fails, free() is called immediately since destroy_event_group() */
-    /*       won't be able to free() them                                    */
+    /*       free()'d by run() during destroy_event_group(). in an event     */
+    /*       where a call to setup_event() or add_to_group() fails, free()   */
+    /*       is called immediately since destroy_event_group() are not aware */
+    /*       of them and won't be able to free() them                        */
 
     event_data_wrap *read_event = NULL;
     event_data_wrap *console_event = NULL;
